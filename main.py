@@ -233,8 +233,10 @@ class Log(BaseModel):
     id: int
     key_id: int
     key_name: str
-    from_employee: Optional[str] = None
-    to_employee: Optional[str] = None
+    from_employee: Optional[int] = None
+    from_employee_name: Optional[str] = None
+    to_employee: Optional[int] = None
+    to_employee_name: Optional[str] = None
     action: LogAction
     timestamp: datetime
 
@@ -551,16 +553,21 @@ def get_logs(_: str = Depends(verify_token)):
     cursor = conn.cursor()
 
     query = """
-        SELECT
-            kl.*,
-            k.name as key_name,
-            e_from.name as from_employee,
-            e_to.name as to_employee
-        FROM key_logs kl
-        LEFT JOIN keys k ON kl.key_id = k.id
-        LEFT JOIN employees e_from ON kl.from_employee = e_from.id
-        LEFT JOIN employees e_to ON kl.to_employee = e_to.id
-        ORDER BY kl.timestamp DESC
+SELECT
+    kl.id,
+    kl.key_id,
+    k.name AS key_name,
+    kl.from_employee,  -- ID
+    e_from.name AS from_employee_name,  -- Employee Name
+    kl.to_employee,  -- ID
+    e_to.name AS to_employee_name,  -- Employee Name
+    kl.action,
+    kl.timestamp
+FROM key_logs kl
+LEFT JOIN keys k ON kl.key_id = k.id
+LEFT JOIN employees e_from ON kl.from_employee = e_from.id
+LEFT JOIN employees e_to ON kl.to_employee = e_to.id
+ORDER BY kl.timestamp DESC;
     """
 
     cursor.execute(query)

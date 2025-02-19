@@ -1,0 +1,8 @@
+fastapi==0.104.1
+uvicorn==0.23.2
+pydantic==2.4.2
+pydantic[email]>=2.4.2
+python-jose[cryptography]>=3.3.0
+python-multipart==0.0.6
+pyjwt==2.8.0
+sqlalchemy==2.0.22

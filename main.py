@@ -1,15 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Query
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional, Union
+from pydantic import BaseModel, EmailStr
+from typing import List, Optional
 from enum import Enum
 from datetime import datetime
 import sqlite3
-import secrets
-import re
 import jwt
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
+import re
 
 # JWT configuration
 SECRET_KEY = "your_secret_key"
@@ -227,13 +226,7 @@ class Key(KeyBase):
 
 
 class KeyAssign(BaseModel):
-    employee_id: Union[int, None] = None
-
-
-class LogFilter(BaseModel):
-    month: Optional[str] = None
-    key_id: Optional[int] = None
-    action: Optional[LogAction] = None
+    employee_id: Optional[int] = None
 
 
 class Log(BaseModel):
@@ -266,9 +259,6 @@ def ensure_key_not_assigned(conn, key_id):
 # API Routes - Authentication
 @app.post("/api/login", response_model=Token, tags=["Authentication"])
 def login(credentials: LoginCredentials):
-    """
-    Login with username and password to get an access token.
-    """
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -290,9 +280,6 @@ def login(credentials: LoginCredentials):
 # Employees Routes
 @app.get("/api/employees", response_model=List[Employee], tags=["Employees"])
 def get_employees(_: str = Depends(verify_token)):
-    """
-    Get all active and left employees.
-    """
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM employees WHERE status != 'deleted' ORDER BY name")
@@ -308,9 +295,6 @@ def get_employees(_: str = Depends(verify_token)):
     tags=["Employees"],
 )
 def create_employee(employee: EmployeeCreate, _: str = Depends(verify_token)):
-    """
-    Create a new employee.
-    """
     if employee.email and not validate_email(employee.email):
         raise HTTPException(status_code=400, detail="Invalid email format")
 
@@ -342,13 +326,9 @@ def create_employee(employee: EmployeeCreate, _: str = Depends(verify_token)):
     tags=["Employees"],
 )
 def mark_employee_as_left(employee_id: int, _: str = Depends(verify_token)):
-    """
-    Mark an employee as having left the organization.
-    """
     conn = get_db()
     cursor = conn.cursor()
 
-    # Check if employee has keys
     cursor.execute("SELECT id FROM keys WHERE current_holder = ?", [employee_id])
     keys = cursor.fetchall()
     if keys:
@@ -370,9 +350,6 @@ def mark_employee_as_left(employee_id: int, _: str = Depends(verify_token)):
     tags=["Employees"],
 )
 def reactivate_employee(employee_id: int, _: str = Depends(verify_token)):
-    """
-    Reactivate an employee who was previously marked as left.
-    """
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("UPDATE employees SET status = 'active' WHERE id = ?", [employee_id])
@@ -390,13 +367,9 @@ def reactivate_employee(employee_id: int, _: str = Depends(verify_token)):
     tags=["Employees"],
 )
 def delete_employee(employee_id: int, _: str = Depends(verify_token)):
-    """
-    Delete an employee (mark as deleted).
-    """
     conn = get_db()
     cursor = conn.cursor()
 
-    # Check if employee has keys
     cursor.execute("SELECT id FROM keys WHERE current_holder = ?", [employee_id])
     keys = cursor.fetchall()
     if keys:
@@ -416,9 +389,6 @@ def delete_employee(employee_id: int, _: str = Depends(verify_token)):
 # Keys Routes
 @app.get("/api/keys", response_model=List[Key], tags=["Keys"])
 def get_keys(_: str = Depends(verify_token)):
-    """
-    Get all keys.
-    """
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
@@ -436,9 +406,6 @@ def get_keys(_: str = Depends(verify_token)):
     "/api/keys", response_model=Key, status_code=status.HTTP_201_CREATED, tags=["Keys"]
 )
 def create_key(key: KeyCreate, _: str = Depends(verify_token)):
-    """
-    Create a new key.
-    """
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -448,7 +415,6 @@ def create_key(key: KeyCreate, _: str = Depends(verify_token)):
         )
         key_id = cursor.lastrowid
 
-        # Log key creation
         cursor.execute(
             "INSERT INTO key_logs (key_id, action) VALUES (?, 'create')", [key_id]
         )
@@ -473,9 +439,6 @@ def create_key(key: KeyCreate, _: str = Depends(verify_token)):
 
 @app.post("/api/keys/{key_id}/toggle-status", response_model=Key, tags=["Keys"])
 def toggle_key_status(key_id: int, _: str = Depends(verify_token)):
-    """
-    Toggle a key's status between active and inactive.
-    """
     conn = get_db()
     cursor = conn.cursor()
 
@@ -488,19 +451,15 @@ def toggle_key_status(key_id: int, _: str = Depends(verify_token)):
     new_status = "inactive" if key["status"] == "active" else "active"
 
     if new_status == "inactive" and key["current_holder"] is not None:
-        # Unassign the key when deactivating
         cursor.execute(
             "UPDATE keys SET status = ?, current_holder = NULL WHERE id = ?",
             [new_status, key_id],
         )
-
-        # Log the unassignment
         cursor.execute(
             "INSERT INTO key_logs (key_id, from_employee, action) VALUES (?, ?, 'unassign')",
             [key_id, key["current_holder"]],
         )
     else:
-        # Just update status
         cursor.execute("UPDATE keys SET status = ? WHERE id = ?", [new_status, key_id])
 
     conn.commit()
@@ -521,9 +480,6 @@ def toggle_key_status(key_id: int, _: str = Depends(verify_token)):
 
 @app.delete("/api/keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Keys"])
 def delete_key(key_id: int, _: str = Depends(verify_token)):
-    """
-    Delete a key permanently.
-    """
     conn = get_db()
     cursor = conn.cursor()
 
@@ -535,8 +491,6 @@ def delete_key(key_id: int, _: str = Depends(verify_token)):
         )
 
     cursor.execute("DELETE FROM keys WHERE id = ?", [key_id])
-
-    # Log the key removal
     cursor.execute(
         "INSERT INTO key_logs (key_id, action) VALUES (?, 'remove')", [key_id]
     )
@@ -548,13 +502,9 @@ def delete_key(key_id: int, _: str = Depends(verify_token)):
 
 @app.post("/api/keys/{key_id}/assign", response_model=Key, tags=["Keys"])
 def assign_key(key_id: int, assignment: KeyAssign, _: str = Depends(verify_token)):
-    """
-    Assign a key to an employee. Use null/none for the employee_id to unassign the key.
-    """
     conn = get_db()
     cursor = conn.cursor()
 
-    # Get current holder
     cursor.execute("SELECT current_holder FROM keys WHERE id = ?", [key_id])
     key = cursor.fetchone()
     if not key:
@@ -564,7 +514,6 @@ def assign_key(key_id: int, assignment: KeyAssign, _: str = Depends(verify_token
     from_employee = key["current_holder"]
     to_employee = assignment.employee_id
 
-    # Determine action type
     if from_employee is None and to_employee is not None:
         action = "assign"
     elif from_employee is not None and to_employee is None:
@@ -572,12 +521,9 @@ def assign_key(key_id: int, assignment: KeyAssign, _: str = Depends(verify_token
     else:
         action = "transfer"
 
-    # Update key holder
     cursor.execute(
         "UPDATE keys SET current_holder = ? WHERE id = ?", [to_employee, key_id]
     )
-
-    # Log the action
     cursor.execute(
         "INSERT INTO key_logs (key_id, from_employee, to_employee, action) VALUES (?, ?, ?, ?)",
         [key_id, from_employee, to_employee, action],
@@ -599,26 +545,13 @@ def assign_key(key_id: int, assignment: KeyAssign, _: str = Depends(verify_token
     return updated_key
 
 
-# Logs Routes
 @app.get("/api/logs", response_model=List[Log], tags=["Logs"])
-def get_logs(
-    month: Optional[str] = None,
-    key_id: Optional[int] = None,
-    action: Optional[LogAction] = None,
-    _: str = Depends(verify_token),
-):
-    """
-    Get key transfer logs with optional filtering.
-
-    - month: Filter by month (format: YYYY-MM)
-    - key_id: Filter by specific key ID
-    - action: Filter by action type (transfer, assign, unassign, create, remove)
-    """
+def get_logs(_: str = Depends(verify_token)):
     conn = get_db()
     cursor = conn.cursor()
 
     query = """
-        SELECT 
+        SELECT
             kl.*,
             k.name as key_name,
             e_from.name as from_employee,
@@ -627,57 +560,18 @@ def get_logs(
         LEFT JOIN keys k ON kl.key_id = k.id
         LEFT JOIN employees e_from ON kl.from_employee = e_from.id
         LEFT JOIN employees e_to ON kl.to_employee = e_to.id
-        WHERE 1=1
+        ORDER BY kl.timestamp DESC
     """
 
-    params = []
-
-    if month:
-        query += " AND strftime('%Y-%m', kl.timestamp) = ?"
-        params.append(month)
-
-    if key_id:
-        query += " AND kl.key_id = ?"
-        params.append(key_id)
-
-    if action:
-        query += " AND kl.action = ?"
-        params.append(action)
-
-    query += " ORDER BY kl.timestamp DESC"
-
-    cursor.execute(query, params)
+    cursor.execute(query)
     logs = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return logs
 
 
-@app.get("/api/dashboard", response_model=List[Key], tags=["Dashboard"])
-def get_dashboard(_: str = Depends(verify_token)):
-    """
-    Get dashboard data - list of active keys with their current holders.
-    """
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT k.id as id, k.name as name, k.description, k.status,
-               k.current_holder, e.name as holder_name
-        FROM keys k
-        LEFT JOIN employees e ON k.current_holder = e.id AND e.status != 'deleted'
-        WHERE k.status = 'active'
-        ORDER BY k.name
-    """)
-    keys = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return keys
-
-
-# User Management for Administrators (this would typically be restricted to super admins)
+# User Management for Administrators
 @app.get("/api/auth-users", response_model=List[AuthUser], tags=["Admin Users"])
 def get_auth_users(_: str = Depends(verify_token)):
-    """
-    Get all authentication users (admin only).
-    """
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
@@ -695,9 +589,6 @@ def get_auth_users(_: str = Depends(verify_token)):
     tags=["Admin Users"],
 )
 def create_auth_user(user: AuthUserCreate, _: str = Depends(verify_token)):
-    """
-    Create a new authentication user (admin only).
-    """
     conn = get_db()
     cursor = conn.cursor()
     try:
@@ -726,7 +617,7 @@ def create_auth_user(user: AuthUserCreate, _: str = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Custom OpenAPI schema for better documentation
+# Custom OpenAPI schema
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
